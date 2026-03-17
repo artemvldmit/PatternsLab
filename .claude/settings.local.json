@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sokot\\\\OneDrive\\\\Рабочий стол\\\\order management system\\\\backend\\\\src\\\\main\\\\java\\\\com\\\\example\\\\shop\" -Recurse -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "PowerShell($basePath = \"c:\\\\Users\\\\sokot\\\\OneDrive\\\\Рабочий стол\\\\order management system\\\\backend\\\\src\\\\main\\\\java\\\\com\\\\example\\\\shop\"; Get-ChildItem -Path $basePath -Recurse | ForEach-Object { if \\($_.PSIsContainer\\) { \"DIR:  $_\" } else { \"FILE: $_\" } } | Sort-Object)",
+      "Bash(Get-ChildItem -Recurse -Force)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sokot\\\\OneDrive\\\\Рабочий стол\\\\order management system\" -Recurse -Force)",
+      "Bash(ConvertTo-Json)",
+      "Bash(mvn compile *)"
+    ]
+  }
+}

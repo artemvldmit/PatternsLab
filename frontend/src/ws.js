@@ -1,30 +1,79 @@
-const listeners = new Set();
-let socket = null;
+const listeners   = new Set();
+let socket         = null;
+let lastAuth       = null;   // {userId, role} — re-sent on every reconnect
+let messageQueue   = [];     // messages buffered while socket is connecting
+let reconnectTimer = null;
 
 function getWsUrl() {
-  if (typeof window !== "undefined" && window.location.hostname) {
-    return `ws://${window.location.hostname}:18081`;
+  const host = typeof window !== "undefined" ? window.location.hostname : "localhost";
+  return `ws://${host}:18081`;
+}
+
+function flushQueue() {
+  while (messageQueue.length > 0 && socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(messageQueue.shift());
   }
-  return "ws://localhost:18081";
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, 2000);
 }
 
 export function connect() {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    return socket;
-  }
-
-  if (socket && socket.readyState === WebSocket.CONNECTING) {
+  if (socket && (socket.readyState === WebSocket.OPEN ||
+                 socket.readyState === WebSocket.CONNECTING)) {
     return socket;
   }
 
   socket = new WebSocket(getWsUrl());
-  socket.onmessage = (evt) => {
-    listeners.forEach((listener) => listener(evt.data));
+
+  socket.onopen = () => {
+    if (lastAuth) {
+      socket.send(JSON.stringify({
+        event:  "auth",
+        userId: String(lastAuth.userId),
+        role:   lastAuth.role,
+      }));
+    }
+    flushQueue();
   };
-  socket.onopen = () => {};
-  socket.onclose = () => { socket = null; };
+
+  socket.onmessage = (evt) => {
+    listeners.forEach((fn) => fn(evt.data));
+  };
+
+  socket.onclose = () => {
+    socket = null;
+    messageQueue = [];
+    if (lastAuth) scheduleReconnect();
+  };
+
   socket.onerror = () => {};
+
   return socket;
+}
+
+export function auth(userId, role) {
+  lastAuth = { userId, role: role || "USER" };
+  const payload = JSON.stringify({ event: "auth", userId: String(userId), role: role || "USER" });
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(payload);
+  } else {
+    connect();
+  }
+}
+
+export function send(message) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(message);
+  } else {
+    messageQueue.push(message);
+    connect();
+  }
 }
 
 export function onMessage(fn) {
@@ -32,29 +81,8 @@ export function onMessage(fn) {
   return () => listeners.delete(fn);
 }
 
-export function send(message) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    connect();
-  }
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(message);
-  }
-}
-
 export function isConnected() {
   return !!socket && socket.readyState === WebSocket.OPEN;
 }
 
-export function joinRoom(roomId) {
-  if (!roomId) return;
-  const payload = JSON.stringify({ action: "join", roomId });
-  send(payload);
-}
-
-export function leaveRoom(roomId) {
-  if (!roomId) return;
-  const payload = JSON.stringify({ action: "leave", roomId });
-  send(payload);
-}
-
-export default { connect, onMessage, send, isConnected };
+export default { connect, auth, onMessage, send, isConnected };

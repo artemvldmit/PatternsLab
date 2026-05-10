@@ -8,7 +8,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import ProductList from "./components/ProductList";
-import { connect, onMessage, send, isConnected, joinRoom } from "./ws";
+import { connect, auth as wsAuth, onMessage, send, isConnected } from "./ws";
 
 const initialPriceForm = { productId: "", price: "" };
 
@@ -26,13 +26,140 @@ function formatEvent(message) {
 
 const ROLE_LABELS = { USER: "Покупатель", ADMIN: "Администратор" };
 
-function AppShell({ role, profile, children }) {
+const EVENT_ICONS = {
+  auth: "🔑",
+  order: "📦",
+  cart: "🛒",
+  subscription: "🔔",
+  admin: "⚙️",
+  chat: "💬",
+  message: "📨",
+};
+
+function NotificationToast({ notifications }) {
+  if (!notifications || notifications.length === 0) return null;
+  return (
+    <div className="notification-toast-stack">
+      {notifications.slice(0, 4).map((n, i) => (
+        <div className="notification-toast" key={i}>
+          <span className="notification-toast__icon">
+            {EVENT_ICONS[n.event] || "ℹ️"}
+          </span>
+          <span className="notification-toast__text">
+            {n.text || n.raw || JSON.stringify(n)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const EMPTY_PAYMENT = { cardNumber: "", expiry: "", cvv: "", name: "" };
+
+function PaymentModal({ total, onConfirm, onCancel }) {
+  const [form, setForm] = React.useState(EMPTY_PAYMENT);
+  const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  function field(key) {
+    return (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  }
+
+  function formatCardNumber(value) {
+    return value.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+  }
+
+  function formatExpiry(value) {
+    const digits = value.replace(/\D/g, "").slice(0, 4);
+    return digits.length > 2 ? digits.slice(0, 2) + "/" + digits.slice(2) : digits;
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const digits = form.cardNumber.replace(/\s/g, "");
+    if (digits.length < 16) { setError("Введите корректный номер карты"); return; }
+    if (form.expiry.length < 5) { setError("Введите срок действия карты"); return; }
+    if (form.cvv.length < 3) { setError("Введите CVV"); return; }
+    if (!form.name.trim()) { setError("Введите имя владельца карты"); return; }
+    setError("");
+    setLoading(true);
+    // Simulate payment processing delay
+    await new Promise((r) => setTimeout(r, 1200));
+    setLoading(false);
+    onConfirm();
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-card">
+        <h3>Оплата заказа</h3>
+        <p className="modal-total">Сумма к оплате: <strong>${Number(total).toFixed(2)}</strong></p>
+        <form className="payment-form" onSubmit={handleSubmit}>
+          <label>
+            <span>Номер карты</span>
+            <input
+              type="text"
+              placeholder="0000 0000 0000 0000"
+              value={form.cardNumber}
+              onChange={(e) => setForm((f) => ({ ...f, cardNumber: formatCardNumber(e.target.value) }))}
+              inputMode="numeric"
+            />
+          </label>
+          <div className="payment-form__row">
+            <label>
+              <span>Срок действия</span>
+              <input
+                type="text"
+                placeholder="ММ/ГГ"
+                value={form.expiry}
+                onChange={(e) => setForm((f) => ({ ...f, expiry: formatExpiry(e.target.value) }))}
+                inputMode="numeric"
+              />
+            </label>
+            <label>
+              <span>CVV</span>
+              <input
+                type="password"
+                placeholder="•••"
+                maxLength={4}
+                value={form.cvv}
+                onChange={field("cvv")}
+                inputMode="numeric"
+              />
+            </label>
+          </div>
+          <label>
+            <span>Имя владельца</span>
+            <input
+              type="text"
+              placeholder="IVAN IVANOV"
+              value={form.name}
+              onChange={field("name")}
+            />
+          </label>
+          {error && <p className="payment-form__error">{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="button button--soft" onClick={onCancel} disabled={loading}>
+              Отмена
+            </button>
+            <button type="submit" className="button" disabled={loading}>
+              {loading ? "Обработка…" : "Оплатить"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AppShell({ role, profile, notifications, children }) {
   const isLoggedIn = profile?.email && profile.email !== "demo@shop.local";
 
   return (
     <div className="app-shell">
       <div className="ambient ambient--one" />
       <div className="ambient ambient--two" />
+      {isLoggedIn && <NotificationToast notifications={notifications} />}
 
       <header className="topbar">
         <div>
@@ -76,43 +203,97 @@ function AppShell({ role, profile, children }) {
   );
 }
 
-function DashboardPage({ products, cart, cartTotal, profile }) {
-  const isLoggedIn = profile?.email && profile.email !== "demo@shop.local";
-
+function UserDashboard({ products, cart, cartTotal, orderHistory, profile }) {
   return (
-    <>
-      <section className="hero-card">
-        <div className="hero-card__grid hero-card__grid--single">
-          <div>
-            <h2>
-              {isLoggedIn
-                ? `Добро пожаловать, ${profile.name}!`
-                : "Добро пожаловать в магазин"}
-            </h2>
-            <p>
-              Перейдите в <strong>Каталог</strong>, чтобы выбрать товары,
-              добавьте их в <strong>Корзину</strong> и оформите заказ.
-            </p>
-
-            <div className="hero-metrics">
-              <div>
-                <strong>{products.length}</strong>
-                <span>товаров</span>
-              </div>
-              <div>
-                <strong>{cart.length}</strong>
-                <span>в корзине</span>
-              </div>
-              <div>
-                <strong>${cartTotal.toFixed(2)}</strong>
-                <span>итого</span>
-              </div>
+    <section className="hero-card">
+      <div className="hero-card__grid hero-card__grid--single">
+        <div>
+          <h2>Добро пожаловать, {profile.name}!</h2>
+          <p>
+            Перейдите в <strong>Каталог</strong>, чтобы выбрать товары,
+            добавьте их в <strong>Корзину</strong> и оформите заказ.
+          </p>
+          <div className="hero-metrics">
+            <div>
+              <strong>{products.length}</strong>
+              <span>товаров в каталоге</span>
+            </div>
+            <div>
+              <strong>{cart.length}</strong>
+              <span>в корзине</span>
+            </div>
+            <div>
+              <strong>${cartTotal.toFixed(2)}</strong>
+              <span>сумма корзины</span>
+            </div>
+            <div>
+              <strong>{orderHistory.length}</strong>
+              <span>заказов</span>
             </div>
           </div>
         </div>
-      </section>
-    </>
+      </div>
+    </section>
   );
+}
+
+function AdminDashboard({ products, orderHistory, historyTotal, profile }) {
+  return (
+    <section className="hero-card">
+      <div className="hero-card__grid hero-card__grid--single">
+        <div>
+          <h2>Панель администратора</h2>
+          <p>
+            Добро пожаловать, <strong>{profile.name}</strong>.
+            Управляйте товарами, ценами и просматривайте аналитику.
+          </p>
+          <div className="hero-metrics">
+            <div>
+              <strong>{products.length}</strong>
+              <span>товаров</span>
+            </div>
+            <div>
+              <strong>{orderHistory.length}</strong>
+              <span>заказов в сессии</span>
+            </div>
+            <div>
+              <strong>${historyTotal.toFixed(2)}</strong>
+              <span>оборот сессии</span>
+            </div>
+          </div>
+          <div className="admin-quicklinks">
+            <span className="pill pill--muted">Управление → смена цен</span>
+            <span className="pill pill--muted">Аналитика → статистика</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DashboardPage({ products, cart, cartTotal, orderHistory, historyTotal, profile, role }) {
+  const isLoggedIn = profile?.email && profile.email !== "demo@shop.local";
+
+  if (!isLoggedIn) {
+    return (
+      <section className="hero-card">
+        <div className="hero-card__grid hero-card__grid--single">
+          <div>
+            <h2>Добро пожаловать в магазин</h2>
+            <p>
+              Войдите в аккаунт, чтобы получить доступ к каталогу, корзине и заказам.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (role === "ADMIN") {
+    return <AdminDashboard products={products} orderHistory={orderHistory} historyTotal={historyTotal} profile={profile} />;
+  }
+
+  return <UserDashboard products={products} cart={cart} cartTotal={cartTotal} orderHistory={orderHistory} profile={profile} />;
 }
 
 function RequireAdmin({ role, children }) {
@@ -122,7 +303,7 @@ function RequireAdmin({ role, children }) {
   return children;
 }
 
-function LoginPage({ profile, loginForm, setLoginForm, handleLogin, role }) {
+function LoginPage({ profile, loginForm, setLoginForm, handleLogin, loginError, role }) {
   const isLoggedIn = profile.email && profile.email !== "demo@shop.local";
 
   return (
@@ -177,6 +358,9 @@ function LoginPage({ profile, loginForm, setLoginForm, handleLogin, role }) {
                 <option value="ADMIN">Администратор</option>
               </select>
             </label>
+            {loginError && (
+              <p className="login-error">{loginError}</p>
+            )}
             <button className="button" type="submit">
               Войти
             </button>
@@ -215,9 +399,16 @@ function CatalogPage({
   );
 }
 
-function CartPage({ cart, cartTotal, refreshCart, placeOrder }) {
+function CartPage({ cart, cartTotal, refreshCart, placeOrder, paymentModal, setPaymentModal, confirmPayment }) {
   return (
     <section className="dashboard-grid dashboard-grid--single">
+      {paymentModal && (
+        <PaymentModal
+          total={cartTotal}
+          onConfirm={confirmPayment}
+          onCancel={() => setPaymentModal(false)}
+        />
+      )}
       <article className="panel">
         <div className="section-header compact">
           <h3>Корзина</h3>
@@ -249,7 +440,7 @@ function CartPage({ cart, cartTotal, refreshCart, placeOrder }) {
             onClick={placeOrder}
             disabled={cart.length === 0}
           >
-            Оформить заказ
+            Оформить и оплатить
           </button>
         </div>
       </article>
@@ -433,13 +624,141 @@ function AnalyticsPage({ role }) {
   );
 }
 
+function ChatThread({ messages, chatInput, setChatInput, onSubmit, placeholder }) {
+  return (
+    <>
+      <div className="chat-window">
+        {messages.length === 0 ? (
+          <div className="empty-state">{placeholder}</div>
+        ) : (
+          messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`chat-message${msg.local || msg.role === "ADMIN" ? " chat-message--self" : ""}`}
+            >
+              <div className="chat-message__meta">
+                <strong>{msg.author || "система"}</strong>
+                <span>{ROLE_LABELS[msg.role] ?? msg.role ?? "поддержка"}</span>
+              </div>
+              <p>{msg.text || msg.raw || JSON.stringify(msg)}</p>
+            </div>
+          ))
+        )}
+      </div>
+      <form className="chat-form" onSubmit={onSubmit}>
+        <input
+          type="text"
+          placeholder="Напишите сообщение..."
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+        />
+        <button className="button" type="submit">Отправить</button>
+      </form>
+    </>
+  );
+}
+
+function AdminSupportPage({
+  chatInput,
+  setChatInput,
+  sendChatMessage,
+  isConnectedValue,
+  supportInbox,
+  activeSupportUserId,
+  setActiveSupportUserId,
+}) {
+  const [allUsers, setAllUsers] = React.useState([]);
+
+  React.useEffect(() => {
+    axios.get("/users").then((r) => {
+      setAllUsers(r.data.filter((u) => u.role !== "ADMIN"));
+    }).catch(() => {});
+  }, []);
+
+  const activeThread = activeSupportUserId
+    ? (supportInbox[String(activeSupportUserId)] || { messages: [] })
+    : null;
+
+  return (
+    <section className="dashboard-grid dashboard-grid--single">
+      <article className="panel">
+        <div className="section-header compact">
+          <h3>Чат с пользователями</h3>
+          <span className={isConnectedValue ? "pill" : "pill pill--muted"}>
+            {isConnectedValue ? "Онлайн" : "Офлайн"}
+          </span>
+        </div>
+
+        <div className="support-inbox">
+          <div className="support-inbox__sidebar">
+            {allUsers.length === 0 ? (
+              <div className="empty-state" style={{ padding: "12px" }}>Нет пользователей</div>
+            ) : (
+              allUsers.map((u) => {
+                const uid      = String(u.id);
+                const thread   = supportInbox[uid];
+                const hasNew   = !!thread;
+                const isActive = String(activeSupportUserId) === uid;
+                return (
+                  <button
+                    key={uid}
+                    className={`support-inbox__user${isActive ? " support-inbox__user--active" : ""}`}
+                    onClick={() => setActiveSupportUserId(uid)}
+                  >
+                    <strong>{u.email.split("@")[0]}</strong>
+                    <span>
+                      {hasNew ? `${thread.messages.length} сообщ.` : "нет сообщений"}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="support-inbox__thread">
+            {activeSupportUserId ? (
+              <ChatThread
+                messages={activeThread.messages}
+                chatInput={chatInput}
+                setChatInput={setChatInput}
+                onSubmit={(e) => sendChatMessage(e, activeSupportUserId)}
+                placeholder="Напишите сообщение пользователю..."
+              />
+            ) : (
+              <div className="empty-state">Выберите пользователя из списка</div>
+            )}
+          </div>
+        </div>
+      </article>
+    </section>
+  );
+}
+
 function SupportPage({
+  role,
   chatMessages,
   chatInput,
   setChatInput,
   sendChatMessage,
   isConnectedValue,
+  supportInbox,
+  activeSupportUserId,
+  setActiveSupportUserId,
 }) {
+  if (role === "ADMIN") {
+    return (
+      <AdminSupportPage
+        chatInput={chatInput}
+        setChatInput={setChatInput}
+        sendChatMessage={sendChatMessage}
+        isConnectedValue={isConnectedValue}
+        supportInbox={supportInbox}
+        activeSupportUserId={activeSupportUserId}
+        setActiveSupportUserId={setActiveSupportUserId}
+      />
+    );
+  }
+
   return (
     <section className="dashboard-grid dashboard-grid--single">
       <article className="panel">
@@ -449,44 +768,13 @@ function SupportPage({
             {isConnectedValue ? "Онлайн" : "Офлайн"}
           </span>
         </div>
-
-        <div className="chat-window">
-          {chatMessages.length === 0 ? (
-            <div className="empty-state">
-              Напишите сообщение, чтобы начать разговор с поддержкой.
-            </div>
-          ) : (
-            chatMessages.map((message, index) => (
-              <div
-                className="chat-message"
-                key={`${message.text || message.raw || index}`}
-              >
-                <div className="chat-message__meta">
-                  <strong>{message.author || "система"}</strong>
-                  <span>
-                    {ROLE_LABELS[message.role] ??
-                      message.role ??
-                      message.channel ??
-                      "поддержка"}
-                  </span>
-                </div>
-                <p>{message.text || message.raw || JSON.stringify(message)}</p>
-              </div>
-            ))
-          )}
-        </div>
-
-        <form className="chat-form" onSubmit={sendChatMessage}>
-          <input
-            type="text"
-            placeholder="Напишите сообщение..."
-            value={chatInput}
-            onChange={(event) => setChatInput(event.target.value)}
-          />
-          <button className="button" type="submit">
-            Отправить
-          </button>
-        </form>
+        <ChatThread
+          messages={chatMessages}
+          chatInput={chatInput}
+          setChatInput={setChatInput}
+          onSubmit={sendChatMessage}
+          placeholder="Напишите сообщение, чтобы начать разговор с поддержкой."
+        />
       </article>
     </section>
   );
@@ -512,6 +800,17 @@ export default function App() {
   const [priceForm, setPriceForm] = useState(initialPriceForm);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
+  const [paymentModal, setPaymentModal] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [supportInbox, setSupportInbox] = useState({});
+  const [activeSupportUserId, setActiveSupportUserId] = useState(null);
+
+  const userIdRef     = React.useRef(userId);
+  const roleRef       = React.useRef(role);
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
+  useEffect(() => { roleRef.current   = role;   }, [role]);
+
+  const isLoggedIn = profile?.email && profile.email !== "demo@shop.local";
 
   useEffect(() => {
     loadProducts();
@@ -519,12 +818,42 @@ export default function App() {
 
     connect();
     const unsubscribe = onMessage((message) => {
-      const parsed = formatEvent(message);
-      setNotifications((current) => [parsed, ...current].slice(0, 6));
 
-      if (parsed.event === "chat" || parsed.channel === "support") {
-        setChatMessages((current) => [parsed, ...current].slice(0, 12));
+      const parsed = formatEvent(message);
+      if (parsed.event === "auth_ok" || parsed.event === "error") return;
+
+      const isSupport = parsed.channel === "support";
+      const myId      = String(userIdRef.current);
+      const isAdmin   = roleRef.current === "ADMIN";
+
+      if (isSupport) {
+        if (isAdmin) {
+          // Incoming message FROM a user (no targetUserId = not our own echo)
+          if (!parsed.targetUserId) {
+            const fromId   = String(parsed.fromUserId || "unknown");
+            const fromName = parsed.author || fromId;
+            setSupportInbox((prev) => {
+              const thread = prev[fromId] || { name: fromName, messages: [] };
+              return { ...prev, [fromId]: { ...thread, messages: [...thread.messages, parsed] } };
+            });
+            setNotifications((cur) => [parsed, ...cur].slice(0, 6));
+          }
+        } else {
+          // Admin reply addressed to this user
+          const tid = parsed.targetUserId != null ? String(parsed.targetUserId) : null;
+          if (tid === myId) {
+            setChatMessages((cur) => [...cur, parsed].slice(-50));
+            setNotifications((cur) => [{ event: "chat", text: `Поддержка: ${parsed.text}` }, ...cur].slice(0, 6));
+          }
+        }
+        return;
       }
+
+      // Non-support targeted messages
+      if (parsed.targetUserId !== undefined &&
+          String(parsed.targetUserId) !== myId) return;
+
+      setNotifications((cur) => [parsed, ...cur].slice(0, 6));
     });
 
     return () => unsubscribe();
@@ -556,11 +885,13 @@ export default function App() {
   }
 
   function pushLocalNotice(entry) {
+    if (!isLoggedInRef.current) return;
     setNotifications((current) => [entry, ...current].slice(0, 6));
   }
 
   async function handleLogin(event) {
     event.preventDefault();
+    setLoginError("");
     const email = loginForm.email.trim();
     if (!email) return;
 
@@ -576,27 +907,17 @@ export default function App() {
       };
       setUserId(user.id);
       setProfile(nextProfile);
-      setRole(user.role || loginForm.role);
-      setStatus(`Logged in as ${nextProfile.name} (${user.role})`);
-      pushLocalNotice({
-        event: "auth",
-        text: `Signed in as ${user.email}`,
-      });
-    } catch {
-      const nextProfile = {
-        email,
-        name: email.split("@")[0] || "User",
-      };
-      setProfile(nextProfile);
-      setRole(loginForm.role);
-      setStatus(`Logged in as ${nextProfile.name} (${loginForm.role})`);
-      pushLocalNotice({
-        event: "auth",
-        text: `Signed in as ${email}`,
-      });
+      setRole(user.role);
+      setNotifications([]);
+      wsAuth(user.id, user.role);
+      pushLocalNotice({ event: "auth", text: `Вы вошли как ${user.email}` });
+      navigate("/dashboard");
+    } catch (err) {
+      const data = err?.response?.data;
+      if (err?.response?.status === 409 && data?.message) {
+        setLoginError(data.message);
+      }
     }
-
-    navigate("/dashboard");
   }
 
   async function subscribeToProduct(productId) {
@@ -653,22 +974,27 @@ export default function App() {
     pushLocalNotice({ event: "history", text: `Repeated ${order.label}` });
   }
 
-  async function placeOrder() {
+  function placeOrder() {
     if (cart.length === 0) {
-      setStatus("Cart is empty");
+      setStatus("Корзина пуста");
       return;
     }
+    setPaymentModal(true);
+  }
+
+  async function confirmPayment() {
+    setPaymentModal(false);
     await axios.post("/orders/create", { userId });
     const historyEntry = {
       id: Date.now(),
-      label: `Order #${Date.now().toString().slice(-4)}`,
+      label: `Заказ #${Date.now().toString().slice(-4)}`,
       total: cartTotal,
       items: [...cart],
     };
     setOrderHistory((current) => [historyEntry, ...current].slice(0, 6));
-    setStatus("Order placed successfully");
+    setStatus("Заказ оплачен и оформлен");
     await loadCart();
-    pushLocalNotice({ event: "order", text: "Order placed from cart" });
+    pushLocalNotice({ event: "order", text: "Заказ оплачен и оформлен" });
     navigate("/orders");
   }
 
@@ -695,31 +1021,40 @@ export default function App() {
     });
   }
 
-  function sendChatMessage(event) {
+  function sendChatMessage(event, targetUserId) {
     event.preventDefault();
     const text = chatInput.trim();
     if (!text) return;
 
-    const roomId = "support-demo";
-    joinRoom(roomId);
-
-    const payload = JSON.stringify({
-      channel: "support",
+    const msgObj = {
       event: "chat",
+      channel: "support",
       author: profile.name,
       role,
+      fromUserId: String(userId),
       text,
-      roomId,
-    });
+    };
+    if (targetUserId) msgObj.targetUserId = String(targetUserId);
 
-    setChatMessages((current) =>
-      [
-        { event: "chat", author: profile.name, text, role, local: true },
-        ...current,
-      ].slice(0, 12),
-    );
+    const local = { ...msgObj, local: true };
+
+    if (role === "ADMIN") {
+      // Admin reply goes into that user's inbox thread
+      if (targetUserId) {
+        setSupportInbox((prev) => {
+          const thread = prev[String(targetUserId)] || { name: String(targetUserId), messages: [] };
+          return {
+            ...prev,
+            [String(targetUserId)]: { ...thread, messages: [...thread.messages, local] },
+          };
+        });
+      }
+    } else {
+      setChatMessages((cur) => [...cur, local].slice(-50));
+    }
+
     setChatInput("");
-    send(payload);
+    send(JSON.stringify(msgObj));
   }
 
   const selectedProductName =
@@ -739,6 +1074,7 @@ export default function App() {
     loginForm,
     setLoginForm,
     handleLogin,
+    loginError,
     loadProducts,
     loadCart,
     refreshCart: loadCart,
@@ -756,10 +1092,16 @@ export default function App() {
     setChatInput,
     sendChatMessage,
     isConnectedValue: isConnected(),
+    paymentModal,
+    setPaymentModal,
+    confirmPayment,
+    supportInbox,
+    activeSupportUserId,
+    setActiveSupportUserId,
   };
 
   return (
-    <AppShell role={role} profile={profile}>
+    <AppShell role={role} profile={profile} notifications={notifications}>
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route

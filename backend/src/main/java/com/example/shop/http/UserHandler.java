@@ -17,36 +17,57 @@ public class UserHandler implements HttpHandler {
 
     @Override
     public void handle(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
+        String path   = exchange.getRequestURI().getPath();
+        String method = exchange.getRequestMethod();
+
+        if ("GET".equals(method) && "/users".equals(path)) {
+            handleGetAll(exchange);
             return;
         }
+
+        if ("POST".equals(method) && path.endsWith("/login")) {
+            handleLogin(exchange);
+            return;
+        }
+
+        exchange.sendResponseHeaders(405, -1);
+    }
+
+    private void handleLogin(HttpExchange exchange) throws IOException {
         try {
             InputStream is = exchange.getRequestBody();
             String body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             @SuppressWarnings("unchecked")
             Map<String, Object> data = gson.fromJson(body, Map.class);
             String email = (String) data.getOrDefault("email", "");
-            String role = (String) data.getOrDefault("role", "USER");
+            String role  = (String) data.getOrDefault("role", "USER");
 
             if (email.isBlank()) {
-                byte[] err = gson.toJson(Map.of("message", "email required"))
-                        .getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
-                exchange.sendResponseHeaders(400, err.length);
-                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                send(exchange, 400, Map.of("message", "email required"));
                 return;
             }
 
             Map<String, Object> user = dao.loginOrCreate(email, role);
-            if (user == null) {
-                exchange.sendResponseHeaders(500, -1);
-                return;
-            }
-            byte[] resp = gson.toJson(user).getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
-            exchange.sendResponseHeaders(200, resp.length);
-            try (OutputStream os = exchange.getResponseBody()) { os.write(resp); }
+            if (user == null) { exchange.sendResponseHeaders(500, -1); return; }
+
+            int status = "role_mismatch".equals(user.get("error")) ? 409 : 200;
+            send(exchange, status, user);
+        } catch (Exception e) {
+            e.printStackTrace();
+            exchange.sendResponseHeaders(500, -1);
+        }
+    }
+
+    private void send(HttpExchange exchange, int status, Object body) throws IOException {
+        byte[] resp = gson.toJson(body).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(status, resp.length);
+        try (OutputStream os = exchange.getResponseBody()) { os.write(resp); }
+    }
+
+    private void handleGetAll(HttpExchange exchange) throws IOException {
+        try {
+            send(exchange, 200, dao.getAllUsers());
         } catch (Exception e) {
             e.printStackTrace();
             exchange.sendResponseHeaders(500, -1);

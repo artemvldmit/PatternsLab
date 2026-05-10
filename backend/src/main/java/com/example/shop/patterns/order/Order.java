@@ -1,13 +1,11 @@
 package com.example.shop.patterns.order;
 
 import com.example.shop.patterns.factory.Product;
+import com.example.shop.patterns.visitor.OrderVisitor;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Order with Builder pattern for complex construction.
- */
 public class Order implements Cloneable {
     private int id;
     private int userId;
@@ -20,6 +18,10 @@ public class Order implements Cloneable {
     public int getUserId() { return userId; }
     public String getStatus() { return status; }
     public List<Product> getItems() { return new ArrayList<>(items); }
+
+    public void setStatus(String s) { this.status = s; }
+
+    public void accept(OrderVisitor visitor) { visitor.visit(this); }
 
     @Override
     public Order clone() {

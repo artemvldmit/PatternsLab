@@ -10,10 +10,8 @@ import java.nio.charset.StandardCharsets;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        // Initialize DB pool
         DataSourceSingleton.getInstance();
 
-        // Simple HTTP server for REST endpoints (placeholder)
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
         server.createContext("/ping", exchange -> {
             String resp = "pong";
@@ -24,7 +22,6 @@ public class Main {
             os.write(respBytes);
             os.close();
         });
-        // REST handlers
         server.createContext("/products", new com.example.shop.http.ProductsHandler());
         server.createContext("/cart", new com.example.shop.http.CartHandler());
         server.createContext("/cart/add", new com.example.shop.http.CartHandler());
@@ -33,11 +30,10 @@ public class Main {
         server.createContext("/subscriptions/add", new com.example.shop.http.SubscriptionHandler());
         server.createContext("/subscriptions/remove", new com.example.shop.http.SubscriptionHandler());
         server.createContext("/analytics", new com.example.shop.http.AnalyticsHandler());
-        server.createContext("/users/login", new com.example.shop.http.UserHandler());
+        server.createContext("/users", new com.example.shop.http.UserHandler());
         server.start();
         System.out.println("HTTP server started on port 8080");
 
-        // Start WebSocket server (port 8081)
         ShopWebSocketServer ws = new ShopWebSocketServer(8081);
         ws.start();
         System.out.println("WebSocket server started on port 8081");

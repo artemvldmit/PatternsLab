@@ -669,3 +669,207 @@ button {
     align-items: flex-start;
   }
 }
+
+/* ── Notification Toasts ─────────────────────────────────────── */
+.notification-toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.notification-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  backdrop-filter: blur(12px);
+  border-radius: 10px;
+  padding: 10px 16px;
+  color: var(--text);
+  font-size: 0.875rem;
+  max-width: 320px;
+  animation: toast-in 0.25s ease;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+.notification-toast__icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.notification-toast__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Modal Overlay ───────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-card {
+  background: var(--bg-panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--shadow);
+}
+
+.modal-card h3 {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+
+.modal-total {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.modal-total strong {
+  color: var(--accent-strong);
+  font-size: 1.1rem;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+/* ── Payment Form ────────────────────────────────────────────── */
+.payment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.payment-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.payment-form input {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.payment-form input:focus {
+  border-color: var(--accent);
+}
+
+.payment-form input::placeholder {
+  color: rgba(238,242,255,0.3);
+}
+
+.payment-form__row {
+  display: grid;
+  grid-template-columns: 1fr 80px;
+  gap: 12px;
+}
+
+.payment-form__error {
+  margin: 0;
+  color: #f87171;
+  font-size: 0.85rem;
+}
+
+/* ── Login error ─────────────────────────────────────────────── */
+.login-error {
+  margin: 0;
+  padding: 10px 14px;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 0.875rem;
+}
+
+/* ── Admin dashboard quick-links ─────────────────────────────── */
+.admin-quicklinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ── Support Inbox (Admin) ───────────────────────────────────── */
+.support-inbox {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 0;
+  min-height: 360px;
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+}
+
+.support-inbox__sidebar {
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.support-inbox__user {
+  all: unset;
+  cursor: pointer;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.15s;
+}
+
+.support-inbox__user:hover { background: var(--bg-soft); }
+.support-inbox__user--active { background: var(--bg-panel-strong); }
+
+.support-inbox__user strong { font-size: 0.875rem; color: var(--text); }
+.support-inbox__user span   { font-size: 0.75rem;  color: var(--muted); }
+
+.support-inbox__thread {
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 12px;
+}
+
+/* Distinguish own messages in chat */
+.chat-message--self {
+  background: rgba(125, 211, 252, 0.06);
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+  border-radius: 0 6px 6px 0;
+}
